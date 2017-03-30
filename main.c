@@ -17,8 +17,14 @@ unsigned int binary(unsigned char n)
 }
 
 int main (void) {
+  /*
+    0: waiting for start bit
+    1-8: waiting for nth data bit
+    9: waiting for stop bit
+  */
   unsigned char bit = 0;
   unsigned int previous_change;
+  unsigned char data;
 
   wiringPiSetup();
   piHiPri(99);
@@ -27,31 +33,28 @@ int main (void) {
   while(digitalRead(0) == 0);
 
   for(;;) {
-    unsigned char data;
+    // start bit found
+    if (bit == 0 && digitalRead(0) == 0) {
+      data = 0;
 
-    // while bus is idle
-    while (digitalRead(0) == 1);
-
-    // start bit present right now
-    previous_change = micros();
-
-    //printf("Got start byte\n");
-
-    data = 0;
-    for(unsigned char i = 0; i < 8; i++) {
-      // wait for 1 bit time before proceeding
-      while((micros() - previous_change) < ((i+1) * 8.68));
-
-      data |= (digitalRead(0) << i);
+      bit++;
+      previous_change = micros();
     }
 
-    // wait for stop bit
-    while((micros() - previous_change) < ((8+1) * 8.68));
+    if (bit > 0 && (micros() - previous_change) > (bit * 8.68)) {
+      if (bit >= 1 && bit <= 8) {
+        data |= (digitalRead(0) << (bit - 1));
+      }
+
+      bit++;
+
+      if (bit == 10) {
+        bit = 0;
+        printf("%c %d\n", data, binary(data));
+      }
+    }
 
     //printf("Found byte!\n");
-    printf("%c %d\n", data, binary(data));
-    //fwrite(&data, 1, 1, stdout);
-    fflush(stdout);
   }
   return 0 ;
 }
