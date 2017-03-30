@@ -1,6 +1,8 @@
 #include <wiringPi.h>
 #include <stdio.h>
 
+#define NUM_PORTS 1
+
 unsigned int binary(unsigned char n)
 {
     unsigned int b = 0;
@@ -16,45 +18,61 @@ unsigned int binary(unsigned char n)
     return b;
 }
 
-int main (void) {
+struct SerialPort {
+  unsigned char pin;
   /*
     0: waiting for start bit
     1-8: waiting for nth data bit
     9: waiting for stop bit
   */
-  unsigned char bit = 0;
-  unsigned int previous_change;
-  unsigned char data;
+  unsigned char bit;
+  unsigned int pBitChange;
+  char buffer[80];
+  unsigned char buffer_length;
+};
 
+struct SerialPort ports[NUM_PORTS];
+
+int main (void) {
   wiringPiSetup();
   piHiPri(99);
-  pinMode (0, INPUT);
+  ports[0].pin = 0;
 
-  while(digitalRead(0) == 0);
+  for(unsigned char i = 0; i < NUM_PORTS; i++) {
+    pinMode(ports[i].pin, INPUT);
+    ports[i].bit = 0;
+    ports[i].buffer_length = 0;
+  }
 
   for(;;) {
     // start bit found
-    if (bit == 0 && digitalRead(0) == 0) {
-      data = 0;
+    for(unsigned char i = 0; i < NUM_PORTS; i++) {
+      if (ports[i].bit == 0 && digitalRead(ports[i].pin) == 0) {
+        ports[i].buffer[ports[i].buffer_length] = 0;
 
-      bit++;
-      previous_change = micros();
-    }
-
-    if (bit > 0 && (micros() - previous_change) > (bit * 8.68)) {
-      if (bit >= 1 && bit <= 8) {
-        data |= (digitalRead(0) << (bit - 1));
+        ports[i].bit++;
+        ports[i].pBitChange = micros();
       }
 
-      bit++;
+      if (ports[i].bit > 0 && (micros() - ports[i].pBitChange) > (ports[i].bit * 8.68)) {
+        if (ports[i].bit >= 1 && ports[i].bit <= 8) {
+          ports[i].buffer[ports[i].buffer_length] |= (digitalRead(ports[i].pin) << (ports[i].bit - 1));
+        }
+        else if (ports[i].bit == 9) {
+          if (digitalRead(ports[i].pin) == 1) {
+            // valid data here
+            ports[i].buffer_length++;
+            ports[i].bit = 0;
 
-      if (bit == 10) {
-        bit = 0;
-        printf("%c %d\n", data, binary(data));
+            printf("%c", ports[i].buffer[ports[i].buffer_length - 1]);
+            fflush(stdout);
+            continue;
+          }
+        }
+
+        ports[i].bit++;
       }
     }
-
-    //printf("Found byte!\n");
   }
   return 0 ;
 }
